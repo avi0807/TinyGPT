@@ -5,7 +5,7 @@ import os
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://avi:AVI123@localhost:5432/lil_gpt"
+    "postgresql://avi:AVI123@localhost:5432/tiny_gpt"
 )
 
 engine = create_engine(DATABASE_URL)

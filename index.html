@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Tiny GPT</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0f0f0f;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 16px 24px;
+      background: #1a1a1a;
+      border-bottom: 1px solid #2a2a2a;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header h1 {
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    header span {
+      font-size: 0.75rem;
+      background: #2a2a2a;
+      padding: 2px 10px;
+      border-radius: 20px;
+      color: #888;
+    }
+
+    #health-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #555;
+      margin-left: auto;
+    }
+    #health-dot.online { background: #4caf50; }
+
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── chat area ── */
+    .chat-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .message {
+      max-width: 75%;
+      padding: 14px 18px;
+      border-radius: 12px;
+      line-height: 1.6;
+      font-size: 0.95rem;
+      white-space: pre-wrap;
+    }
+
+    .message.user {
+      align-self: flex-end;
+      background: #1e3a5f;
+      color: #cce4ff;
+      border-bottom-right-radius: 4px;
+    }
+
+    .message.bot {
+      align-self: flex-start;
+      background: #1e1e1e;
+      color: #e0e0e0;
+      border: 1px solid #2a2a2a;
+      border-bottom-left-radius: 4px;
+    }
+
+    .message.bot .meta {
+      font-size: 0.72rem;
+      color: #555;
+      margin-top: 8px;
+    }
+
+    .message.typing {
+      align-self: flex-start;
+      background: #1e1e1e;
+      border: 1px solid #2a2a2a;
+      color: #555;
+      font-style: italic;
+      padding: 12px 18px;
+      border-radius: 12px;
+      border-bottom-left-radius: 4px;
+    }
+
+    /* ── input bar ── */
+    .input-bar {
+      padding: 16px 24px;
+      background: #1a1a1a;
+      border-top: 1px solid #2a2a2a;
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+    }
+
+    #prompt-input {
+      flex: 1;
+      background: #2a2a2a;
+      border: 1px solid #333;
+      border-radius: 10px;
+      padding: 12px 16px;
+      color: #e0e0e0;
+      font-size: 0.95rem;
+      resize: none;
+      min-height: 48px;
+      max-height: 140px;
+      outline: none;
+      font-family: inherit;
+    }
+
+    #prompt-input:focus { border-color: #555; }
+
+    #send-btn {
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 20px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      height: 48px;
+      transition: background 0.2s;
+    }
+    #send-btn:hover { background: #1d4ed8; }
+    #send-btn:disabled { background: #333; cursor: not-allowed; }
+
+    /* ── sidebar ── */
+    .sidebar {
+      width: 260px;
+      background: #141414;
+      border-left: 1px solid #2a2a2a;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sidebar-header {
+      padding: 16px;
+      font-size: 0.8rem;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border-bottom: 1px solid #2a2a2a;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .controls {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      border-bottom: 1px solid #2a2a2a;
+    }
+
+    .control-group label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      color: #888;
+      margin-bottom: 6px;
+    }
+
+    .control-group label span {
+      color: #aaa;
+      font-weight: 600;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: #2563eb;
+    }
+
+    .control-group select {
+      width: 100%;
+      background: #2a2a2a;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #e0e0e0;
+      padding: 6px 10px;
+      font-size: 0.82rem;
+      outline: none;
+    }
+
+    /* ── history ── */
+    .history-section {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .history-item {
+      background: #1e1e1e;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+
+    .history-item:hover { border-color: #444; }
+
+    .history-item .h-prompt {
+      font-size: 0.82rem;
+      color: #ccc;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .history-item .h-meta {
+      font-size: 0.7rem;
+      color: #555;
+      margin-top: 4px;
+    }
+
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🤖 Tiny GPT</h1>
+  <span>TinyStories · 34M params</span>
+  <div id="health-dot" title="Checking..."></div>
+</header>
+
+<div class="main">
+
+  <!-- Chat -->
+  <div class="chat-area">
+    <div id="messages">
+      <div class="message bot">
+        Hi! I'm Tiny GPT — a small language model trained on TinyStories. Give me a story prompt and I'll continue it ✨
+      </div>
+    </div>
+    <div class="input-bar">
+      <textarea id="prompt-input" rows="1"
+        placeholder="Once upon a time..."></textarea>
+      <button id="send-btn">Generate</button>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      Settings
+      <button onclick="loadHistory()"
+        style="background:none;border:none;color:#555;cursor:pointer;font-size:0.75rem;">
+        ↻ History
+      </button>
+    </div>
+
+    <div class="controls">
+      <div class="control-group">
+        <label>Temperature <span id="temp-val">0.8</span></label>
+        <input type="range" id="temperature" min="0.1" max="2.0"
+               step="0.1" value="0.8"
+               oninput="document.getElementById('temp-val').textContent=this.value">
+      </div>
+      <div class="control-group">
+        <label>Top-p <span id="topp-val">0.9</span></label>
+        <input type="range" id="top_p" min="0.1" max="1.0"
+               step="0.05" value="0.9"
+               oninput="document.getElementById('topp-val').textContent=this.value">
+      </div>
+      <div class="control-group">
+        <label>Max tokens <span id="tokens-val">100</span></label>
+        <input type="range" id="max_tokens" min="10" max="300"
+               step="10" value="100"
+               oninput="document.getElementById('tokens-val').textContent=this.value">
+      </div>
+    </div>
+
+    <div class="sidebar-header" style="border-top: 1px solid #2a2a2a;">
+      Recent Generations
+    </div>
+    <div class="history-section" id="history-list">
+      <div style="font-size:0.78rem;color:#444;padding:8px;">
+        Click ↻ to load history
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const API = "http://localhost:8000";
+
+  // health check
+  async function checkHealth() {
+    try {
+      const r = await fetch(`${API}/health`);
+      if (r.ok) {
+        document.getElementById("health-dot").classList.add("online");
+        document.getElementById("health-dot").title = "Online";
+      }
+    } catch {}
+  }
+  checkHealth();
+
+  // auto-resize textarea
+  const input = document.getElementById("prompt-input");
+  input.addEventListener("input", () => {
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 140) + "px";
+  });
+
+  // send on Ctrl+Enter
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter" && e.ctrlKey) generate();
+  });
+
+  function addMessage(text, type, meta = "") {
+    const div = document.createElement("div");
+    div.className = `message ${type}`;
+    div.textContent = text;
+    if (meta) {
+      const m = document.createElement("div");
+      m.className = "meta";
+      m.textContent = meta;
+      div.appendChild(m);
+    }
+    document.getElementById("messages").appendChild(div);
+    div.scrollIntoView({ behavior: "smooth" });
+    return div;
+  }
+
+  async function generate() {
+    const prompt = input.value.trim();
+    if (!prompt) return;
+
+    const btn = document.getElementById("send-btn");
+    btn.disabled = true;
+    input.value = "";
+    input.style.height = "48px";
+
+    addMessage(prompt, "user");
+
+    const typing = document.createElement("div");
+    typing.className = "message typing";
+    typing.textContent = "Generating...";
+    document.getElementById("messages").appendChild(typing);
+    typing.scrollIntoView({ behavior: "smooth" });
+
+    try {
+      const res = await fetch(`${API}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt,
+          temperature: parseFloat(document.getElementById("temperature").value),
+          top_p: parseFloat(document.getElementById("top_p").value),
+          max_new_tokens: parseInt(document.getElementById("max_tokens").value)
+        })
+      });
+
+      const data = await res.json();
+      typing.remove();
+
+      if (res.ok) {
+        addMessage(
+          data.prompt + " "+ data.generated_text,
+          "bot",
+          `⏱ ${data.response_time_ms}ms · temp=${data.temperature ?? document.getElementById("temperature").value} · top_p=${data.top_p ?? document.getElementById("top_p").value}`
+        );
+      } else {
+        addMessage(`Error: ${data.detail}`, "bot");
+      }
+    } catch (e) {
+      typing.remove();
+      addMessage("Could not reach the server. Is it running?", "bot");
+    }
+
+    btn.disabled = false;
+    input.focus();
+  }
+
+  document.getElementById("send-btn").onclick = generate;
+
+  async function loadHistory() {
+    const list = document.getElementById("history-list");
+    list.innerHTML = `<div style="font-size:0.78rem;color:#444;padding:8px;">Loading...</div>`;
+    try {
+      const res = await fetch(`${API}/history`);
+      const data = await res.json();
+      list.innerHTML = "";
+      if (!data.length) {
+        list.innerHTML = `<div style="font-size:0.78rem;color:#444;padding:8px;">No generations yet</div>`;
+        return;
+      }
+      data.forEach(item => {
+        const div = document.createElement("div");
+        div.className = "history-item";
+        div.innerHTML = `
+          <div class="h-prompt">${item.prompt}</div>
+          <div class="h-meta">${item.response_time_ms}ms · temp ${item.temperature}</div>
+        `;
+        div.onclick = () => {
+          addMessage(item.prompt, "user");
+          addMessage(item.full_text || item.generated_text, "bot",
+            `⏱ ${item.response_time_ms}ms (from history)`);
+        };
+        list.appendChild(div);
+      });
+    } catch {
+      list.innerHTML = `<div style="font-size:0.78rem;color:#444;padding:8px;">Failed to load</div>`;
+    }
+  }
+</script>
+</body>
+</html>

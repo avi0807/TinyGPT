@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from app.models_db import Generation
+from models_db import Generation
 
 
 def save_generation(

@@ -2,9 +2,9 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
 import numpy as np
-from transformer_model.layers import TransformerBlock, PositionalEmbedding, create_causal_mask
-from transformer_model.tokenizer import BPE_tokenizer
-from transformer_model.model import GPT, generate_text, sample_top_p, sample_top_k, sample_with_temperature
+from layers import TransformerBlock, PositionalEmbedding, create_causal_mask
+from tokenizer import BPE_tokenizer
+from model import GPT, generate_text, sample_top_p, sample_top_k, sample_with_temperature
 
 if __name__ == "__main__":
     # load tokenizer

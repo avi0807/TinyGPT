@@ -7,8 +7,8 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='3'
 import tensorflow as tf 
 import numpy as np
 import matplotlib.pyplot as plt
-from transformer_model.layers import TransformerBlock,PositionalEmbedding,create_causal_mask
-from transformer_model.tokenizer import CharTokenizer,BPE_tokenizer
+from layers import TransformerBlock,PositionalEmbedding,create_causal_mask
+from tokenizer import CharTokenizer,BPE_tokenizer
 class training_callback:
     def __init__(self,patience=3,min_delta=0.01,save_path="best_model.weights.h5"):
         self.patience = patience          # epochs to wait before early stopping
@@ -242,10 +242,10 @@ if __name__ == "__main__":
     text = " ".join(hf_dataset["train"]["text"][:100000])
 
     tokenizer=BPE_tokenizer(num_merges=6000)    
-#tokenizer.load("tokenizer.pkl")
-    tokenizer.train(text)    
-    tokenizer.build_token_mappings(text)
-    tokenizer.save("tokenizer.pkl")
+    tokenizer.load("/home/avipandey/Projects/TinyGPT/saved_models/tokenizer.pkl")
+    # tokenizer.train(text)    
+    # tokenizer.build_token_mappings(text)
+    # tokenizer.save("tokenizer.pkl")
 
     vocab_size=tokenizer.vocab_size
     print("Vocab_size: ",vocab_size)

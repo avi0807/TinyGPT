@@ -1,16 +1,18 @@
 #from tensorflow.keras import mixed_precision
 #mixed_precision.set_global_policy('mixed_float16')
+import sys, os
+
+# path fixes
+sys.path.append(os.path.join(os.path.dirname(__file__)))               # app/
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'transformer_model'))  # transformer_model/
+
 import multiprocessing
 multiprocessing.set_start_method("spawn", force=True)
 
-import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
-
 import time
-from contextlib import asynccontextmanager
-
 import numpy as np
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,24 +20,21 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.database import Base, engine, get_db
-import app.crud as crud
+from database import Base, engine, get_db
+import crud as crud
 
-SEQ_LEN    = 256 
-WEIGHTS    = "best_model.weights.h5"
-TOKENIZER  = "tokenizer.pkl"
+SEQ_LEN   = 256
+WEIGHTS   = os.path.join(os.path.dirname(__file__), '..', 'saved_models', 'best_model.weights.h5')
+TOKENIZER = os.path.join(os.path.dirname(__file__), '..', 'saved_models', 'tokenizer.pkl')
+INDEX_HTML = os.path.join(os.path.dirname(__file__), '..', 'index.html')
 
 def get_model():
     if not hasattr(app.state, "model"):
         print("Loading model for the first time...")
 
         import tensorflow as tf
-        from transformer_model.model import GPT, generate_text
-        from transformer_model.tokenizer import BPE_tokenizer
-
-        SEQ_LEN = 256
-        WEIGHTS = "best_model.weights.h5"
-        TOKENIZER = "tokenizer.pkl"
+        from model import GPT, generate_text
+        from tokenizer import BPE_tokenizer
 
         tokenizer = BPE_tokenizer(num_merges=6000)
         tokenizer.load(TOKENIZER)
@@ -60,6 +59,8 @@ def get_model():
         print("Model loaded.")
 
     return app.state.model, app.state.tokenizer, app.state.generate_text
+
+
 app = FastAPI(
     title="TinyStories GPT",
     description="A small GPT model trained on TinyStories",
@@ -98,7 +99,7 @@ class HealthResponse(BaseModel):
 
 @app.get("/", include_in_schema=False)
 def root():
-    return {"message":"TinyGPT is running"}
+    return FileResponse(INDEX_HTML)
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -112,7 +113,6 @@ def health():
         )
 
     import tensorflow as tf
-
     total_params = sum(
         tf.size(w).numpy() for w in app.state.model.trainable_variables
     )
@@ -127,7 +127,7 @@ def health():
 
 @app.post("/generate", response_model=GenerateResponse)
 def generate(request: GenerateRequest, db: Session = Depends(get_db)):
-    model,tokenizer,generate_text=get_model()
+    model, tokenizer, generate_text = get_model()
     import tensorflow as tf
     try:
         start_time = time.time()
