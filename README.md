@@ -10,7 +10,15 @@ pinned: false
 
 # TinyGPT
 
-A small GPT-style language model built and trained from scratch to write short children's stories. Implemented in TensorFlow/Keras with a custom transformer (RoPE attention, weight tying, KV-cache), a byte-level BPE tokenizer, and a FastAPI inference server backed by PostgreSQL.
+A small GPT-style language model built and trained from scratch to write short children's stories. Implemented in TensorFlow/Keras with a custom transformer (RoPE attention, weight tying, KV-cache), a byte-level BPE tokenizer, and a FastAPI inference server.
+
+**🔗 Live demo:** [avi080704-tinygpt.hf.space](https://avi080704-tinygpt.hf.space)
+
+<!-- Add a screenshot of the app below -->
+<!-- ![TinyGPT UI](docs/screenshot.png) -->
+<p align="center">
+  <em>(screenshot coming soon)</em>
+</p>
 
 ---
 
@@ -25,11 +33,12 @@ A small GPT-style language model built and trained from scratch to write short c
 - [Inference & Sampling](#inference--sampling)
 - [KV-Cache](#kv-cache)
 - [API Server](#api-server)
-- [Creativity Levels](#creativity-levels)
+- [Temperature Control](#temperature-control)
 - [Database](#database)
 - [Project Structure](#project-structure)
 - [Setup & Installation](#setup--installation)
 - [Running the Server](#running-the-server)
+- [Deployment](#deployment)
 - [Training From Scratch](#training-from-scratch)
 - [Results](#results)
 
@@ -48,6 +57,7 @@ Positional:   RoPE (rotary position embeddings)
 Tokenizer:    Byte-level BPE (HuggingFace tokenizers), 10k vocab
 Framework:    TensorFlow 2.x / Keras (mixed bfloat16)
 Dataset:      TinyStoriesV2 (noanabeshima/TinyStoriesV2)
+Final loss:   ~1.42 (validation cross-entropy)
 ```
 
 ---
@@ -216,13 +226,14 @@ Small, uniform vocabulary; clear narrative structure; short sentences. A ~50M mo
 
 ## Inference & Sampling
 
-Three sampling strategies are implemented:
+Sampling strategies implemented:
 
 - **Temperature** — divides logits before softmax. Lower = safer/more repetitive; higher = more random/creative.
 - **Top-K** — keep only the K highest-probability tokens.
 - **Top-P (nucleus)** — keep the smallest set of tokens whose cumulative probability exceeds `p`.
+- **Repetition penalty** — already-generated tokens have their logits scaled down (penalty `1.3`) to reduce looping and repeated phrases.
 
-Generation stops early when the model emits `<|endoftext|>`.
+`top_p` is auto-derived from the temperature (≈ 0.80 → 0.95 across the slider) so a single control adjusts everything. Generation stops early when the model emits `<|endoftext|>`.
 
 ---
 
@@ -249,7 +260,7 @@ FastAPI server exposing the model as a REST API.
 |--------|-------|-------------|
 | `GET` | `/` | Serves the frontend UI |
 | `GET` | `/health` | Model status, parameter count, vocab size |
-| `GET` | `/creativity-levels` | The named creativity presets with explanations |
+| `GET` | `/temperature-info` | Slider config + green→red colour zones |
 | `POST` | `/generate` | Generate a story from a prompt |
 | `GET` | `/history` | Retrieve past generations |
 | `DELETE` | `/history/{id}` | Delete a stored generation |
@@ -259,12 +270,12 @@ FastAPI server exposing the model as a REST API.
 ```json
 {
   "prompt": "Once upon a time there was a little dragon",
-  "creativity": "balanced",
+  "temperature": 0.5,
   "max_new_tokens": 200
 }
 ```
 
-`creativity` is one of `predictable | balanced | creative | wild` (see below). Advanced callers may instead pass raw `temperature` and `top_p`, which override the preset.
+`temperature` (0.1–1.5, default **0.5**) is the single creativity control. `top_p` is auto-derived from it but may be passed explicitly to override.
 
 ### Generate Response
 
@@ -272,10 +283,11 @@ FastAPI server exposing the model as a REST API.
 {
   "prompt": "Once upon a time there was a little dragon",
   "generated_text": "Once upon a time there was a little dragon ...",
-  "creativity": "balanced",
-  "creativity_description": "A good mix of sense and surprise ...",
-  "temperature": 0.8,
-  "top_p": 0.9,
+  "temperature": 0.5,
+  "temperature_label": "Safe",
+  "temperature_description": "Focused and predictable. Simple, calm, easy-to-follow tales.",
+  "temperature_color": "#9dc739",
+  "top_p": 0.82,
   "max_new_tokens": 200,
   "response_time_ms": 812.4
 }
@@ -283,24 +295,24 @@ FastAPI server exposing the model as a REST API.
 
 ---
 
-## Creativity Levels
+## Temperature Control
 
-Rather than asking users to guess what "temperature" means, the API exposes named levels, each with a plain-language description of how it changes the story. Fetch them from `/creativity-levels`:
+Instead of asking users to guess what "temperature" means, the slider runs **green → red** and the API returns a plain-language label, description, and the exact colour for any value. `GET /temperature-info` returns the slider config and these zones:
 
-| Level | temperature | top_p | What it does to your stories |
-|-------|-------------|-------|------------------------------|
-| **Predictable** | 0.6 | 0.85 | Safe and focused. Simple, calm, easy-to-follow tales. |
-| **Balanced** *(default)* | 0.8 | 0.9 | A good mix of sense and surprise. Recommended for most prompts. |
-| **Creative** | 1.0 | 0.95 | More imaginative and varied, with the odd unexpected twist. |
-| **Wild** | 1.3 | 1.0 | Unpredictable and quirky. Fun, but may wander or stop making sense. |
+| Range | Label | What it does to your stories |
+|-------|-------|------------------------------|
+| 0.1 – 0.5 | **Safe** | Focused and predictable. Simple, calm, easy-to-follow tales. |
+| 0.5 – 0.8 | **Balanced** | A good mix of sense and surprise. Recommended for most prompts. |
+| 0.8 – 1.1 | **Creative** | More imaginative and varied, with the odd unexpected twist. |
+| 1.1 – 1.5 | **Wild** | Unpredictable and quirky. Fun, but may wander or stop making sense. |
 
-In short: **lower = safer and more repetitive, higher = more creative and more random.**
+In short: **lower (green) = safer and more coherent, higher (red) = more creative and more random.** The default is `0.5`.
 
 ---
 
 ## Database
 
-PostgreSQL stores every generation for monitoring and future data collection.
+Every generation is logged for monitoring and future data collection. The database is **optional**: the app defaults to a local **SQLite** file (`DATABASE_URL=sqlite:///./tinygpt.db`) and can use **PostgreSQL** by setting `DATABASE_URL`. If the database is unreachable (e.g. on ephemeral hosting), generation still works — logging is simply skipped.
 
 ### Schema — `generations`
 
@@ -313,9 +325,9 @@ PostgreSQL stores every generation for monitoring and future data collection.
 | `top_p` | Float | Effective nucleus threshold |
 | `max_new_tokens` | Integer | Generation length |
 | `response_time_ms` | Float | Latency in ms |
-| `created_at` | DateTime (indexed) | Set by PostgreSQL |
+| `created_at` | DateTime (indexed) | Set automatically |
 
-Stack: `FastAPI → SQLAlchemy ORM → psycopg2 → PostgreSQL`. Tables are created on startup.
+Stack: `FastAPI → SQLAlchemy ORM → SQLite / psycopg2 + PostgreSQL`. Tables are created on startup.
 
 ---
 
@@ -410,6 +422,18 @@ To force CPU inference: `export CUDA_VISIBLE_DEVICES=-1` before launching.
 
 ---
 
+## Deployment
+
+The app is deployed on **Hugging Face Spaces** (free CPU tier: 2 vCPU, 16 GB RAM) as a Docker Space, live at **[avi080704-tinygpt.hf.space](https://avi080704-tinygpt.hf.space)**.
+
+How it works:
+- The repo's `README.md` front-matter (`sdk: docker`, `app_port: 7860`) tells Spaces to build and run the `Dockerfile`.
+- Pushing to the Space's git repo triggers an automatic image build and redeploy.
+- The model weights (~220 MB) are stored via **Git LFS**.
+- Inference runs on CPU; the model loads once at startup and is reused across requests. The database falls back to SQLite (history is ephemeral on the free tier).
+
+---
+
 ## Training From Scratch
 
 ```bash
@@ -425,10 +449,17 @@ Keep the process alive for long runs (`tmux`/`nohup`) and ensure the machine doe
 
 ## Results
 
-Trained on TinyStoriesV2 with the ~50M configuration, validation cross-entropy descends into the ~1.4 range and below, producing coherent short stories with consistent characters and a beginning/middle/end. Example (balanced creativity):
+Trained from scratch on TinyStoriesV2 with the ~50M configuration, validation cross-entropy reached a **final loss of ≈ 1.42**. At this level the model produces coherent short stories with a clear beginning/middle/end, dialogue, and a moral — well below the original character-level baselines and squarely in TinyStories' "coherent story" range.
 
-> **Prompt:** "once upon a time there was a donkey named avi"
+**Example** (temperature 0.5, "Safe"):
+
+> **Prompt:** "There was a boy named Avi"
 >
-> ...She was three years old and loved to explore the world around her. One day she found a dull, old box in the garage. She was curious and wanted to open it... a voice said, "Don't worry, I can help you." It was her brother, Sam... Inside was a big, shiny ball... The moral of this story is that sometimes it's important to be curious.
+> There was a boy named Avi. He had an incredible toy car that he loved to play with every day. One day, his mom told him they were going on a trip... They went outside and saw many fun things like birds, trees, and flowers... But then, something unexpected happened. A big wind came and blew away some of his toys!
 
-Generation quality continues to improve as validation loss decreases over training.
+### Notes & limitations
+
+- **Domain-bound.** The model only knows the TinyStories world (simple words, children's-story situations). Prompts outside that domain (science, current events) won't produce sensible output — the narrow domain is what makes a 50M model coherent in the first place.
+- **Uncommon names can drift.** Common TinyStories names (Lily, Tom, Ben) stay consistent. Rare names that the tokenizer splits into subwords (e.g. "Avi") can mutate across the story — a side effect of the repetition penalty discouraging exact token reuse.
+- **Quality scales with training.** Output continues to sharpen as validation loss decreases.
+
