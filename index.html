@@ -1,382 +1,381 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Tiny GPT</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TinyGPT</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bitcount+Prop+Single&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --glow: #C56E6E;
+    --bg: #FFFFFF;
+    --input: #FFB48F;
+    --btn: #CF613D;
+    --slider-green: #31ff49;
+    --slider-red: #ff4444;
+  }
 
-    body {
-      background: #0f0f0f;
-      color: #e0e0e0;
-      font-family: 'Segoe UI', sans-serif;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
 
-    header {
-      padding: 16px 24px;
-      background: #1a1a1a;
-      border-bottom: 1px solid #2a2a2a;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
+  html, body { height: 100%; }
 
-    header h1 {
-      font-size: 1.2rem;
-      font-weight: 600;
-      color: #fff;
-    }
+  body {
+    font-family: 'Inter', sans-serif;
+    color: #333;
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at 50% 42%,
+        var(--glow) 0%,
+        rgba(197, 110, 110, 0.55) 22%,
+        rgba(197, 110, 110, 0.12) 48%,
+        var(--bg) 72%);
+    background-color: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow-x: hidden;
+    padding: 24px;
+  }
 
-    header span {
-      font-size: 0.75rem;
-      background: #2a2a2a;
-      padding: 2px 10px;
-      border-radius: 20px;
-      color: #888;
-    }
+  .stage {
+    width: 100%;
+    max-width: 1177px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
 
-    #health-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #555;
-      margin-left: auto;
-    }
-    #health-dot.online { background: #4caf50; }
+  /* ── Title ── */
+  h1.title {
+    font-family: 'Bitcount Prop Single', monospace;
+    color: #FFFFFF;
+    font-size: clamp(3rem, 11vw, 6.5rem);
+    line-height: 1;
+    letter-spacing: 0.02em;
+    text-shadow: 7px 9px 10px rgba(255, 0, 0, 0.25);
+    animation: titleDrop 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+    user-select: none;
+  }
 
-    .main {
-      display: flex;
-      flex: 1;
-      overflow: hidden;
-    }
+  @keyframes titleDrop {
+    from { opacity: 0; transform: translateY(-150px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
 
-    /* ── chat area ── */
-    .chat-area {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
+  /* ── Subtitle ── */
+  p.subtitle {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: clamp(0.95rem, 2.2vw, 1.4rem);
+    margin-top: 18px;
+    max-width: 680px;
+    animation: fadeIn 0.613s ease-out 0.55s both;
+  }
 
-    #messages {
-      flex: 1;
-      overflow-y: auto;
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 
-    .message {
-      max-width: 75%;
-      padding: 14px 18px;
-      border-radius: 12px;
-      line-height: 1.6;
-      font-size: 0.95rem;
-      white-space: pre-wrap;
-    }
+  /* ── Compose group (input + slider + button) ── */
+  .compose {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 40px;
+    transition: opacity 0.5s ease, transform 0.5s ease;
+  }
+  .compose.hidden {
+    opacity: 0;
+    transform: translateY(10px);
+    pointer-events: none;
+  }
 
-    .message.user {
-      align-self: flex-end;
-      background: #1e3a5f;
-      color: #cce4ff;
-      border-bottom-right-radius: 4px;
-    }
+  .input-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 1177px;
+    animation: fadeInUp 0.6s ease-out 0.9s both;
+  }
 
-    .message.bot {
-      align-self: flex-start;
-      background: #1e1e1e;
-      color: #e0e0e0;
-      border: 1px solid #2a2a2a;
-      border-bottom-left-radius: 4px;
-    }
+  textarea#prompt {
+    width: 100%;
+    height: 40px;
+    min-height: 40px;
+    max-height: 40px;
+    resize: none;
+    border: none;
+    outline: none;
+    overflow-y: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    border-radius: 45px;
+    padding: 0 40px;
+    line-height: 40px;
+    font-family: 'Inter', sans-serif;
+    font-size: 1.05rem;
+    color: #5a2d20;
+    background: var(--input);
+    box-shadow: 0 10px 30px rgba(197, 110, 110, 0.25);
+    transition: box-shadow 0.3s ease, transform 0.3s ease;
+    white-space: nowrap;
+  }
+  textarea#prompt::-webkit-scrollbar { display: none; }
+  textarea#prompt::placeholder { color: rgba(90, 45, 32, 0.45); }
+  textarea#prompt:focus {
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.7),
+                0 12px 38px rgba(207, 97, 61, 0.45);
+    transform: translateY(-2px);
+  }
 
-    .message.bot .meta {
-      font-size: 0.72rem;
-      color: #555;
-      margin-top: 8px;
-    }
+  /* ── Slider pinned to input top-right (bare track, no label) ── */
+  .slider-pod {
+    position: absolute;
+    top: -22px;
+    right: 40px;
+    display: flex;
+    align-items: center;
+  }
 
-    .message.typing {
-      align-self: flex-start;
-      background: #1e1e1e;
-      border: 1px solid #2a2a2a;
-      color: #555;
-      font-style: italic;
-      padding: 12px 18px;
-      border-radius: 12px;
-      border-bottom-left-radius: 4px;
-    }
+  .slider-tip {
+    position: absolute;
+    bottom: calc(100% + 12px);
+    right: -24px;
+    width: 280px;
+    background: rgba(40, 20, 18, 0.95);
+    color: #ffe;
+    font-size: 0.72rem;
+    font-weight: 500;
+    line-height: 1.5;
+    padding: 12px 14px;
+    border-radius: 12px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+    opacity: 0;
+    transform: translateY(6px);
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    z-index: 10;
+    text-align: left;
+  }
+  .slider-tip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    right: 36px;
+    border: 6px solid transparent;
+    border-top-color: rgba(40, 20, 18, 0.95);
+  }
+  .slider-pod:hover .slider-tip {
+    opacity: 1;
+    transform: translateY(0);
+  }
 
-    /* ── input bar ── */
-    .input-bar {
-      padding: 16px 24px;
-      background: #1a1a1a;
-      border-top: 1px solid #2a2a2a;
-      display: flex;
-      gap: 10px;
-      align-items: flex-end;
-    }
+  input[type="range"]#temp {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 150px;
+    height: 6px;
+    border-radius: 999px;
+    background: linear-gradient(to right, var(--slider-green), #e6e84a, var(--slider-red));
+    outline: none;
+    cursor: pointer;
+  }
+  input[type="range"]#temp::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid rgba(0, 0, 0, 0.15);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+    transition: transform 0.15s ease;
+  }
+  input[type="range"]#temp::-webkit-slider-thumb:active { transform: scale(1.2); }
+  input[type="range"]#temp::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid rgba(0, 0, 0, 0.15);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  }
 
-    #prompt-input {
-      flex: 1;
-      background: #2a2a2a;
-      border: 1px solid #333;
-      border-radius: 10px;
-      padding: 12px 16px;
-      color: #e0e0e0;
-      font-size: 0.95rem;
-      resize: none;
-      min-height: 48px;
-      max-height: 140px;
-      outline: none;
-      font-family: inherit;
-    }
+  /* ── Generate button ── */
+  button#generate {
+    margin-top: 30px;
+    background: var(--btn);
+    color: #FFD04D;
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    font-size: 1.05rem;
+    border: none;
+    border-radius: 49px;
+    padding: 15px 46px;
+    cursor: pointer;
+    box-shadow: 0 8px 22px rgba(207, 97, 61, 0.4);
+    transition: transform 0.15s ease, box-shadow 0.25s ease, background 0.2s ease;
+    animation: titleDrop 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  button#generate:hover { background: #b9542f; box-shadow: 0 10px 28px rgba(207, 97, 61, 0.55); transform: translateY(-2px); }
+  button#generate:active { transform: translateY(0) scale(0.98); }
+  button#generate:disabled { opacity: 0.7; cursor: default; transform: none; }
 
-    #prompt-input:focus { border-color: #555; }
+  /* ── Loading ── */
+  .loading {
+    margin-top: 40px;
+    color: rgba(255, 255, 255, 0.75);
+    font-weight: 600;
+    font-size: 1.1rem;
+    display: none;
+  }
+  .loading.show { display: block; animation: fadeIn 0.4s ease both; }
+  .loading .dots span {
+    animation: blink 1.4s infinite both;
+    display: inline-block;
+  }
+  .loading .dots span:nth-child(2) { animation-delay: 0.2s; }
+  .loading .dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
 
-    #send-btn {
-      background: #2563eb;
-      color: white;
-      border: none;
-      border-radius: 10px;
-      padding: 12px 20px;
-      font-size: 0.95rem;
-      cursor: pointer;
-      height: 48px;
-      transition: background 0.2s;
-    }
-    #send-btn:hover { background: #1d4ed8; }
-    #send-btn:disabled { background: #333; cursor: not-allowed; }
+  /* ── Story view ── */
+  .story-view {
+    width: 100%;
+    max-width: 720px;
+    margin-top: 40px;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+  }
+  .story-view.show { display: flex; animation: fadeInUp 0.7s ease-out both; }
 
-    /* ── sidebar ── */
-    .sidebar {
-      width: 260px;
-      background: #141414;
-      border-left: 1px solid #2a2a2a;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
+  .story-card {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(8px);
+    border-radius: 28px;
+    padding: 34px 38px;
+    text-align: left;
+    line-height: 1.8;
+    font-size: 1.1rem;
+    color: #3a2a26;
+    box-shadow: 0 16px 44px rgba(197, 110, 110, 0.28);
+    white-space: pre-wrap;
+  }
 
-    .sidebar-header {
-      padding: 16px;
-      font-size: 0.8rem;
-      color: #666;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      border-bottom: 1px solid #2a2a2a;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
+  .story-meta {
+    margin-top: 14px;
+    font-size: 0.78rem;
+    color: rgba(120, 74, 58, 0.85);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .story-meta .chip {
+    background: rgba(255, 255, 255, 0.6);
+    padding: 3px 10px;
+    border-radius: 999px;
+  }
 
-    .controls {
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      border-bottom: 1px solid #2a2a2a;
-    }
+  button.again {
+    margin-top: 24px;
+    background: transparent;
+    color: var(--btn);
+    border: 2px solid var(--btn);
+    border-radius: 49px;
+    padding: 11px 32px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+  button.again:hover { background: var(--btn); color: #fff; }
 
-    .control-group label {
-      display: flex;
-      justify-content: space-between;
-      font-size: 0.78rem;
-      color: #888;
-      margin-bottom: 6px;
-    }
-
-    .control-group label span {
-      color: #aaa;
-      font-weight: 600;
-    }
-
-    input[type="range"] {
-      width: 100%;
-      accent-color: #2563eb;
-    }
-
-    .control-group select {
-      width: 100%;
-      background: #2a2a2a;
-      border: 1px solid #333;
-      border-radius: 6px;
-      color: #e0e0e0;
-      padding: 6px 10px;
-      font-size: 0.82rem;
-      outline: none;
-    }
-
-    /* ── history ── */
-    .history-section {
-      flex: 1;
-      overflow-y: auto;
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .history-item {
-      background: #1e1e1e;
-      border: 1px solid #2a2a2a;
-      border-radius: 8px;
-      padding: 10px 12px;
-      cursor: pointer;
-      transition: border-color 0.2s;
-    }
-
-    .history-item:hover { border-color: #444; }
-
-    .history-item .h-prompt {
-      font-size: 0.82rem;
-      color: #ccc;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .history-item .h-meta {
-      font-size: 0.7rem;
-      color: #555;
-      margin-top: 4px;
-    }
-
-    ::-webkit-scrollbar { width: 4px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
-  </style>
+  @media (max-width: 560px) {
+    body { padding: 16px; align-items: flex-start; padding-top: 8vh; }
+    .slider-pod { right: 14px; top: -26px; padding: 8px 10px; }
+    input[type="range"]#temp { width: 120px; }
+    textarea#prompt { padding: 24px 24px; border-radius: 32px; }
+    .story-card { padding: 24px 22px; border-radius: 22px; font-size: 1rem; }
+  }
+</style>
 </head>
 <body>
 
-<header>
-  <h1>🤖 Tiny GPT</h1>
-  <span>TinyStories · 34M params</span>
-  <div id="health-dot" title="Checking..."></div>
-</header>
+<div class="stage">
+  <h1 class="title">TinyGPT</h1>
+  <p class="subtitle" id="subtitle">A Generative Pre-Trained Transformer, that specializes in ending your sentences with stories.<br>ALWAYS</p>
 
-<div class="main">
-
-  <!-- Chat -->
-  <div class="chat-area">
-    <div id="messages">
-      <div class="message bot">
-        Hi! I'm Tiny GPT — a small language model trained on TinyStories. Give me a story prompt and I'll continue it ✨
+  <div class="compose" id="compose">
+    <div class="input-wrap">
+      <textarea id="prompt" rows="2"></textarea>
+      <div class="slider-pod">
+        <div class="slider-tip">This is the temperature parameter. Higher temperature makes the sampling space larger, more tokens to choose from (lower probability ones). Higher temperature means more creative stories, lower means less and more deterministic.</div>
+        <input type="range" id="temp" min="0.1" max="1.5" step="0.1" value="0.5" />
       </div>
     </div>
-    <div class="input-bar">
-      <textarea id="prompt-input" rows="1"
-        placeholder="Once upon a time..."></textarea>
-      <button id="send-btn">Generate</button>
-    </div>
+    <button id="generate">Generate</button>
   </div>
 
-  <!-- Sidebar -->
-  <div class="sidebar">
-    <div class="sidebar-header">
-      Settings
-      <button onclick="loadHistory()"
-        style="background:none;border:none;color:#555;cursor:pointer;font-size:0.75rem;">
-        ↻ History
-      </button>
-    </div>
-
-    <div class="controls">
-      <div class="control-group">
-        <label>Temperature <span id="temp-val">0.8</span></label>
-        <input type="range" id="temperature" min="0.1" max="2.0"
-               step="0.1" value="0.8"
-               oninput="document.getElementById('temp-val').textContent=this.value">
-      </div>
-      <div class="control-group">
-        <label>Top-p <span id="topp-val">0.9</span></label>
-        <input type="range" id="top_p" min="0.1" max="1.0"
-               step="0.05" value="0.9"
-               oninput="document.getElementById('topp-val').textContent=this.value">
-      </div>
-      <div class="control-group">
-        <label>Max tokens <span id="tokens-val">100</span></label>
-        <input type="range" id="max_tokens" min="10" max="300"
-               step="10" value="100"
-               oninput="document.getElementById('tokens-val').textContent=this.value">
-      </div>
-    </div>
-
-    <div class="sidebar-header" style="border-top: 1px solid #2a2a2a;">
-      Recent Generations
-    </div>
-    <div class="history-section" id="history-list">
-      <div style="font-size:0.78rem;color:#444;padding:8px;">
-        Click ↻ to load history
-      </div>
-    </div>
+  <div class="loading" id="loading">
+    Writing your story<span class="dots"><span>.</span><span>.</span><span>.</span></span>
   </div>
 
+  <div class="story-view" id="story-view">
+    <div class="story-card" id="story-text"></div>
+    <div class="story-meta" id="story-meta"></div>
+    <button class="again" id="again">Write another</button>
+  </div>
 </div>
 
 <script>
-  const API = "http://localhost:8000";
+  const API = (location.protocol === "http:" || location.protocol === "https:")
+    ? location.origin
+    : "http://localhost:8000";
 
-  // health check
-  async function checkHealth() {
+  const promptEl   = document.getElementById("prompt");
+  const tempEl     = document.getElementById("temp");
+  const genBtn     = document.getElementById("generate");
+  const compose    = document.getElementById("compose");
+  const subtitle   = document.getElementById("subtitle");
+  const loading    = document.getElementById("loading");
+  const storyView  = document.getElementById("story-view");
+  const storyText  = document.getElementById("story-text");
+  const storyMeta  = document.getElementById("story-meta");
+  const againBtn   = document.getElementById("again");
+
+  async function loadTempInfo() {
     try {
-      const r = await fetch(`${API}/health`);
-      if (r.ok) {
-        document.getElementById("health-dot").classList.add("online");
-        document.getElementById("health-dot").title = "Online";
-      }
+      const r = await fetch(`${API}/temperature-info`);
+      if (!r.ok) return;
+      const info = await r.json();
+      if (info.min != null) tempEl.min = info.min;
+      if (info.max != null) tempEl.max = info.max;
+      if (info.step != null) tempEl.step = info.step;
+      if (info.default != null) tempEl.value = info.default;
     } catch {}
   }
-  checkHealth();
 
-  // auto-resize textarea
-  const input = document.getElementById("prompt-input");
-  input.addEventListener("input", () => {
-    input.style.height = "auto";
-    input.style.height = Math.min(input.scrollHeight, 140) + "px";
+  // Ctrl+Enter to generate
+  promptEl.addEventListener("keydown", e => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) generate();
   });
-
-  // send on Ctrl+Enter
-  input.addEventListener("keydown", e => {
-    if (e.key === "Enter" && e.ctrlKey) generate();
-  });
-
-  function addMessage(text, type, meta = "") {
-    const div = document.createElement("div");
-    div.className = `message ${type}`;
-    div.textContent = text;
-    if (meta) {
-      const m = document.createElement("div");
-      m.className = "meta";
-      m.textContent = meta;
-      div.appendChild(m);
-    }
-    document.getElementById("messages").appendChild(div);
-    div.scrollIntoView({ behavior: "smooth" });
-    return div;
-  }
 
   async function generate() {
-    const prompt = input.value.trim();
-    if (!prompt) return;
+    const prompt = promptEl.value.trim();
+    if (!prompt) { promptEl.focus(); return; }
 
-    const btn = document.getElementById("send-btn");
-    btn.disabled = true;
-    input.value = "";
-    input.style.height = "48px";
-
-    addMessage(prompt, "user");
-
-    const typing = document.createElement("div");
-    typing.className = "message typing";
-    typing.textContent = "Generating...";
-    document.getElementById("messages").appendChild(typing);
-    typing.scrollIntoView({ behavior: "smooth" });
+    genBtn.disabled = true;
+    compose.classList.add("hidden");
+    subtitle.style.transition = "opacity 0.5s ease";
+    subtitle.style.opacity = "0";
+    loading.classList.add("show");
 
     try {
       const res = await fetch(`${API}/generate`, {
@@ -384,64 +383,57 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt,
-          temperature: parseFloat(document.getElementById("temperature").value),
-          top_p: parseFloat(document.getElementById("top_p").value),
-          max_new_tokens: parseInt(document.getElementById("max_tokens").value)
-        })
+          temperature: parseFloat(tempEl.value),
+          max_new_tokens: 200,
+        }),
       });
-
       const data = await res.json();
-      typing.remove();
+      loading.classList.remove("show");
 
       if (res.ok) {
-        addMessage(
-          data.prompt + " "+ data.generated_text,
-          "bot",
-          `⏱ ${data.response_time_ms}ms · temp=${data.temperature ?? document.getElementById("temperature").value} · top_p=${data.top_p ?? document.getElementById("top_p").value}`
-        );
+        showStory(prompt, data);
       } else {
-        addMessage(`Error: ${data.detail}`, "bot");
+        showError(data.detail || "Something went wrong.");
       }
     } catch (e) {
-      typing.remove();
-      addMessage("Could not reach the server. Is it running?", "bot");
-    }
-
-    btn.disabled = false;
-    input.focus();
-  }
-
-  document.getElementById("send-btn").onclick = generate;
-
-  async function loadHistory() {
-    const list = document.getElementById("history-list");
-    list.innerHTML = `<div style="font-size:0.78rem;color:#444;padding:8px;">Loading...</div>`;
-    try {
-      const res = await fetch(`${API}/history`);
-      const data = await res.json();
-      list.innerHTML = "";
-      if (!data.length) {
-        list.innerHTML = `<div style="font-size:0.78rem;color:#444;padding:8px;">No generations yet</div>`;
-        return;
-      }
-      data.forEach(item => {
-        const div = document.createElement("div");
-        div.className = "history-item";
-        div.innerHTML = `
-          <div class="h-prompt">${item.prompt}</div>
-          <div class="h-meta">${item.response_time_ms}ms · temp ${item.temperature}</div>
-        `;
-        div.onclick = () => {
-          addMessage(item.prompt, "user");
-          addMessage(item.full_text || item.generated_text, "bot",
-            `⏱ ${item.response_time_ms}ms (from history)`);
-        };
-        list.appendChild(div);
-      });
-    } catch {
-      list.innerHTML = `<div style="font-size:0.78rem;color:#444;padding:8px;">Failed to load</div>`;
+      loading.classList.remove("show");
+      showError("Could not reach the server. Is it running?");
     }
   }
+
+  function showStory(prompt, data) {
+    storyText.textContent = (data.generated_text || "").trim();
+    storyMeta.innerHTML = "";
+    const chips = [];
+    if (data.temperature_label) chips.push(`${data.temperature_label} · temp ${data.temperature}`);
+    if (data.response_time_ms != null) chips.push(`${data.response_time_ms} ms`);
+    chips.forEach(c => {
+      const s = document.createElement("span");
+      s.className = "chip";
+      s.textContent = c;
+      storyMeta.appendChild(s);
+    });
+    storyView.classList.add("show");
+  }
+
+  function showError(msg) {
+    storyText.textContent = msg;
+    storyMeta.innerHTML = "";
+    storyView.classList.add("show");
+  }
+
+  function reset() {
+    storyView.classList.remove("show");
+    loading.classList.remove("show");
+    compose.classList.remove("hidden");
+    subtitle.style.opacity = "";
+    genBtn.disabled = false;
+    promptEl.focus();
+  }
+  againBtn.addEventListener("click", reset);
+  genBtn.addEventListener("click", generate);
+
+  loadTempInfo();
 </script>
 </body>
 </html>

@@ -1,17 +1,16 @@
-
 services:
   db:
     image: postgres:14
     environment:
-      POSTGRES_USER: avi
-      POSTGRES_PASSWORD: yourpassword
-      POSTGRES_DB: tiny_gpt
+      POSTGRES_USER: ${POSTGRES_USER:-avi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-tiny_gpt}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U avi -d tiny_gpt"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-avi} -d ${POSTGRES_DB:-tiny_gpt}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -24,7 +23,8 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://avi:yourpassword@db:5432/tiny_gpt
+      DATABASE_URL: postgresql://${POSTGRES_USER:-avi}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-tiny_gpt}
+      CUDA_VISIBLE_DEVICES: "-1"
 
 volumes:
   pgdata:

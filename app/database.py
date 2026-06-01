@@ -5,10 +5,12 @@ import os
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://avi:AVI123@localhost:5432/tiny_gpt"
+    "sqlite:///./tinygpt.db"
 )
 
-engine = create_engine(DATABASE_URL)
+# SQLite needs check_same_thread=False to work across FastAPI's worker threads.
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

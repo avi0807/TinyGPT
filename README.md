@@ -1,6 +1,16 @@
-# LilGPT
+---
+title: TinyGPT
+emoji: 📖
+colorFrom: red
+colorTo: pink
+sdk: docker
+app_port: 7860
+pinned: false
+---
 
-A small GPT language model trained from scratch on the TinyStories dataset. Built entirely in TensorFlow/Keras, with a custom BPE tokenizer, RoPE positional embeddings, and a FastAPI inference server backed by PostgreSQL.
+# TinyGPT
+
+A small GPT-style language model built and trained from scratch to write short children's stories. Implemented in TensorFlow/Keras with a custom transformer (RoPE attention, weight tying, KV-cache), a byte-level BPE tokenizer, and a FastAPI inference server backed by PostgreSQL.
 
 ---
 
@@ -13,143 +23,126 @@ A small GPT language model trained from scratch on the TinyStories dataset. Buil
 - [Training](#training)
 - [Dataset](#dataset)
 - [Inference & Sampling](#inference--sampling)
+- [KV-Cache](#kv-cache)
 - [API Server](#api-server)
+- [Creativity Levels](#creativity-levels)
 - [Database](#database)
 - [Project Structure](#project-structure)
 - [Setup & Installation](#setup--installation)
-- [Training Guidelines](#training-guidelines)
+- [Running the Server](#running-the-server)
+- [Training From Scratch](#training-from-scratch)
 - [Results](#results)
 
 ---
 
 ## Overview
 
-LilGPT is a decoder-only transformer language model built from scratch without using any pretrained weights or high-level model libraries. Every component — the tokenizer, attention mechanism, positional embeddings, training loop, and inference server — was implemented manually.
+TinyGPT is a decoder-only transformer trained from scratch, without pretrained weights. Every core component — the tokenizer, attention with rotary embeddings, the training loop, the sampling code, and the KV-cache used for fast generation — is implemented directly.
 
-The model is trained on children's short stories and learns to generate coherent, grammatically correct story continuations from a prompt.
+The model is trained on the TinyStories dataset and learns to generate coherent, grammatically correct short stories from a prompt. The narrow, uniform story domain is what lets a model this small produce genuinely readable output.
 
 ```
-Parameters:   ~22M
-Architecture: GPT-style decoder-only transformer
-Tokenizer:    Custom BPE (Byte Pair Encoding)
-Framework:    TensorFlow 2.x / Keras
-Dataset:      TinyStories (roneneldan/TinyStories)
-Final Loss:   ~2.32 (cross-entropy)
+Parameters:   ~50M
+Architecture: GPT-style decoder-only transformer (GPT-3 inspired)
+Positional:   RoPE (rotary position embeddings)
+Tokenizer:    Byte-level BPE (HuggingFace tokenizers), 10k vocab
+Framework:    TensorFlow 2.x / Keras (mixed bfloat16)
+Dataset:      TinyStoriesV2 (noanabeshima/TinyStoriesV2)
 ```
 
 ---
 
 ## Model Architecture
 
-LilGPT uses a **decoder-only transformer** architecture following GPT-2/3 design principles.
+A **decoder-only transformer** following GPT-2/3 design, with RoPE instead of learned absolute positions.
 
 ### Hyperparameters
 
 | Parameter | Value |
 |-----------|-------|
-| `d_model` | 512 |
-| `num_heads` | 8 |
-| `dff` (feed-forward dim) | 2048 |
-| `num_layers` | 8 |
+| `d_model` | 640 |
+| `num_heads` | 10 (head_dim = 64) |
+| `dff` (feed-forward dim) | 2560 |
+| `num_layers` | 10 |
 | `seq_len` | 256 |
 | `dropout_rate` | 0.1 |
-| `vocab_size` | ~6029 |
+| `vocab_size` | 10000 |
 
 ### Components
 
 **Token Embedding**
-- Learned embedding matrix of shape `(vocab_size, d_model)`
-- No separate positional embedding — position is handled by RoPE
+- Learned embedding matrix of shape `(vocab_size, d_model)`, initialized `N(0, 0.02)`.
+- Position is handled by RoPE inside attention, so there is no separate positional embedding table.
 
-**Transformer Blocks (×8)**
-
-Each block uses Pre-LayerNorm (GPT-3 style) for training stability:
+**Transformer Blocks (×10)** — Pre-LayerNorm (GPT-3 style):
 
 ```
-x → LayerNorm → MultiheadAttention → x + residual
-  → LayerNorm → FFN               → x + residual
+x → LayerNorm → MultiHeadAttention → x + residual
+  → LayerNorm → FFN (GELU)          → x + residual
 ```
 
-Pre-LayerNorm keeps the residual stream clean — gradients flow without being squeezed by normalization, which makes deep networks more stable than Post-LayerNorm (GPT-1/2 style).
+Pre-LN keeps the residual stream clean and stabilizes deep training.
 
 **Multi-Head Attention**
-- 8 attention heads, each with `depth = d_model / num_heads = 64`
-- Causal masking via lower-triangular matrix — prevents attending to future tokens
-- RoPE applied to Q and K before computing attention scores
-- KV Cache implemented for efficient autoregressive generation
+- 10 heads, `head_dim = 64`.
+- Causal masking; RoPE applied to Q and K before the attention scores.
+- Attention-probability dropout (GPT-3 style).
+- KV-cache for fast autoregressive generation.
 
-**Feed-Forward Network (FFN)**
-- Two dense layers: `d_model → dff → d_model`
-- ReLU activation
-- Applied independently to each position
+**Feed-Forward Network**
+- `d_model → dff → d_model`, **GELU** activation.
 
-**Final LayerNorm**
-- Applied after all transformer blocks before the output projection
+**Initialization (GPT-2/3 scheme)**
+- Weights `N(0, 0.02)`; biases zero; LayerNorm γ=1, β=0.
+- Residual output projections (attention `dense` and FFN `dense2`) scaled by `0.02 / sqrt(2 · num_layers)` for stability.
 
 **Weight Tying**
-- The output projection matrix is shared with the token embedding matrix
-- Reduces parameters by `vocab_size × d_model` (~3M params)
-- Standard practice in GPT-1, GPT-2, GPT-3
+- The output projection reuses the token-embedding matrix, saving `vocab_size × d_model` parameters.
+
+**Final LayerNorm** before the output projection; logits are cast to float32.
+
+### Parameter Count (~50M)
+
+With `d_model=640`, `dff=2560`, `num_layers=10`, `vocab=10000`:
+
+| Component | Params |
+|-----------|-------:|
+| Token embedding (tied) | 6.4M |
+| 10 × transformer block (~4.9M each) | ~49M |
+| Final LayerNorm | ~0.001M |
+| **Total** | **~50.5M** |
+
+Per block ≈ `12 · d_model²` (4·d² attention + 8·d² FFN) plus biases and LayerNorm.
 
 ---
 
 ## Tokenizer
 
-A custom **Byte Pair Encoding (BPE)** tokenizer implemented from scratch.
+A **byte-level BPE** tokenizer (HuggingFace `tokenizers`, Rust-backed) with a 10k vocabulary, trained on a sample of TinyStories.
 
-### How BPE Works
+- **Byte-level**: any unicode/whitespace round-trips cleanly; no `KeyError` on unseen characters.
+- **Special tokens**: `<|endoftext|>` (id 0, EOS) and `<|unk|>` (id 1), reserved at the lowest ids.
+- **Fast**: encoding the corpus is fast enough that CPU tokenization never starves the GPU during training.
+- **Persistence**: saved to `saved_models/tinystories_tokenizer.json`.
 
-1. Start with character-level vocabulary — every character is a token
-2. Count all adjacent token pairs in the corpus
-3. Merge the most frequent pair into a new token
-4. Repeat for `num_merges` iterations
-5. Result: a vocabulary of common subwords, words, and characters
-
-### Configuration
-
-| Parameter | Value |
-|-----------|-------|
-| `num_merges` | 6000 |
-| `vocab_size` | ~6029 |
-| Trained on | 100k TinyStories |
-
-### Key Implementation Details
-
-- **Caching**: `encode()` caches previously encoded words — critical for performance since the 100k story corpus has only ~20k unique words despite 19M total tokens
-- **Persistence**: Tokenizer state saved to `tokenizer.pkl` via pickle — avoids retraining (which takes several hours) on every run
-- **Encoded corpus**: `X.npy` and `Y.npy` saved after first encoding run for instant reload
+A from-scratch pure-Python BPE (`BPE_tokenizer`) and a `CharTokenizer` also live in `tokenizer.py` for reference; the trained model uses `HFTokenizer`.
 
 ---
 
 ## Positional Encoding — RoPE
 
-LilGPT uses **Rotary Positional Embeddings (RoPE)** instead of learned or sinusoidal absolute positional encodings.
+TinyGPT uses **Rotary Positional Embeddings (RoPE)** instead of learned or sinusoidal absolute encodings.
 
-### Intuition
-
-Standard positional encodings add position information to token vectors. RoPE instead **rotates** the Query and Key vectors by an angle proportional to their position:
+RoPE rotates Q and K by an angle proportional to token position:
 
 ```
-q_rotated = q * cos(mθ) + rotate_half(q) * sin(mθ)
-k_rotated = k * cos(mθ) + rotate_half(k) * sin(mθ)
+q_rotated = q · cos(mθ) + rotate_half(q) · sin(mθ)
+k_rotated = k · cos(mθ) + rotate_half(k) · sin(mθ)
 ```
 
-When you compute the dot product `q · k`, the rotation angles cancel out to produce the **relative position** between tokens — naturally encoding how far apart two tokens are without needing to know their absolute positions.
+When `q · k` is computed, the rotations combine to encode the **relative** distance between tokens. The sin/cos tables are precomputed once for `max_len`. During cached generation, each new token is rotated at its correct absolute position via a position offset equal to the current cache length.
 
-### Advantages over Absolute Positional Encoding
-
-- Encodes relative position directly in the attention dot product
-- Better length generalization — can handle sequences longer than seen during training
-- No extra parameters — purely mathematical transformation
-- Used in LLaMA, PaLM, and most modern LLMs
-
-### Implementation
-
-```
-build_rope_angles(seq_len, head_dim) → angles of shape (seq_len, head_dim)
-rotate_half(x)                       → splits even/odd dims, applies 2D rotation
-apply_rope(q, k)                     → applies rotation to Q and K before attention
-```
+Advantages: relative position directly in the attention dot product, better length behavior, no extra parameters. Used in LLaMA, Mistral, Qwen, and most modern LLMs.
 
 ---
 
@@ -157,7 +150,7 @@ apply_rope(q, k)                     → applies rotation to Q and K before atte
 
 ### Optimizer
 
-**Adam** with GPT-3 hyperparameters:
+Adam with GPT-3 hyperparameters:
 
 | Parameter | Value |
 |-----------|-------|
@@ -166,113 +159,83 @@ apply_rope(q, k)                     → applies rotation to Q and K before atte
 | `epsilon` | 1e-8 |
 | `clipnorm` | 1.0 |
 
-Gradient clipping (`clipnorm=1.0`) prevents exploding gradients from destabilizing training on bad batches.
+### Learning Rate — Warmup + Cosine Decay
 
-### Learning Rate Schedule — Warmup + Cosine Decay
+Linear warmup over the first 10% of updates to `peak_lr = 3e-4`, then cosine decay to `0.1 × peak_lr`. The schedule is driven by the number of **optimizer updates**, not micro-batches.
+
+### Mixed Precision (bfloat16)
+
+`mixed_bfloat16` is used. bf16 has the same exponent range as float32, so it does **not** require loss scaling (unlike float16). This avoids the `LossScaleOptimizer` machinery entirely and is stable on Ampere GPUs (RTX 3050+).
+
+### Gradient Accumulation
+
+To fit the model on a 6GB GPU while keeping a useful effective batch size:
 
 ```
-Steps 0 → warmup_steps:      0 → peak_lr   (linear warmup)
-Steps warmup_steps → total:   peak_lr → 0.1 × peak_lr  (cosine decay)
+micro_batch_size = 4
+accum_steps      = 4
+effective_batch  = 16
 ```
 
-| Parameter | Value |
-|-----------|-------|
-| `peak_lr` | 3e-4 |
-| `warmup_steps` | 10% of total steps |
-| `min_lr` | 3e-5 (10% of peak) |
+Gradients are summed over `accum_steps` micro-batches, then applied as a single update.
 
-**Why warmup?** At the start of training weights are random — a high learning rate causes chaotic, destructive updates. Linear warmup lets the model stabilize before hitting peak learning rate.
+### Streaming Data Pipeline
 
-**Why cosine decay?** Gradually reduces learning rate so the model makes increasingly precise weight updates as it converges, rather than overshooting the minimum.
+Data is streamed and tokenized on the fly (no giant pre-tokenized array on disk):
 
-### Mixed Precision
+```
+HF streaming dataset → text docs → BPE tokens + <|endoftext|> boundaries
+  → packed into seq_len chunks → tf.data → batched → prefetched
+```
 
-`mixed_float16` policy enabled via `tf.keras.mixed_precision`:
+The streamer retries on transient network errors and can loop the dataset to meet a token budget larger than the dataset itself.
 
-- Matrix multiplications run in **float16** — faster on tensor cores, lower memory
-- Numerically sensitive ops (softmax, LayerNorm, final logits) cast to **float32**
-- Reduces VRAM usage by ~40%, enabling larger batch sizes on 6GB GPU
+### Checkpointing & Resume
 
-### Early Stopping Callback
-
-Custom `training_callback` class:
-
-- Saves best weights to `best_model.weights.h5` whenever loss improves by `min_delta`
-- Stops training if no improvement for `patience` consecutive epochs
-- Plots and saves loss curve to `loss_curve.png`
-
-| Parameter | Value |
-|-----------|-------|
-| `patience` | 3 |
-| `min_delta` | 0.01 |
-
-### KV Cache
-
-Implemented for efficient autoregressive generation:
-
-- During generation, past Key and Value tensors are cached per layer
-- Each new token only attends to cached K/V instead of recomputing from scratch
-- Reduces generation from O(n²) to O(n) per step
-- ~4-8x speedup for long sequences
+- Validation loss is checked every 1000 updates on an in-memory held-out set; best weights are saved to `saved_models/tinystories_model.weights.h5`.
+- A `tf.train.Checkpoint` (model + optimizer + step counter) is saved to `saved_models/ckpt_tinystories/`, so a crashed run resumes from the last checkpoint.
 
 ---
 
 ## Dataset
 
-**TinyStories** — a dataset of short children's stories generated by GPT-3.5 and GPT-4, designed specifically for training and evaluating small language models.
+**TinyStoriesV2** — short children's stories generated by GPT-4, designed for training and evaluating small language models.
 
 | Property | Value |
 |----------|-------|
-| Source | [roneneldan/TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories) |
-| Stories used | 100,000 |
-| Total tokens | ~19M |
-| Training sequences | ~74,341 |
-| Sequence length | 256 tokens |
+| Source | [noanabeshima/TinyStoriesV2](https://huggingface.co/datasets/noanabeshima/TinyStoriesV2) |
+| Stories | ~2.75M |
+| Approx tokens | ~520–580M |
+| Sequence length | 256 |
 
 ### Why TinyStories?
 
-- Simple, consistent vocabulary — ideal for small models
-- Clear narrative structure — beginning, middle, end
-- Short sentences — easier to learn grammar and coherence
-- Diverse characters and scenarios within a constrained domain
-
-### Data Pipeline
-
-```python
-raw text → BPE tokenizer → encoded_text (19M tokens)
-         → sliding window (stride=seq_len) → (X, Y) sequences
-         → tf.data.Dataset → shuffle → batch → prefetch
-```
-
-Sequences are created with a sliding window — input is tokens `[i:i+seq_len]`, target is `[i+1:i+seq_len+1]` (next-token prediction).
+Small, uniform vocabulary; clear narrative structure; short sentences. A ~50M model can actually **master** this narrow distribution, which is why the output is coherent. Trained on broad web text instead, a model this size produces fluent but meaningless text — the narrow domain is the point.
 
 ---
 
 ## Inference & Sampling
 
-Three sampling strategies implemented:
+Three sampling strategies are implemented:
 
-### Temperature Sampling
+- **Temperature** — divides logits before softmax. Lower = safer/more repetitive; higher = more random/creative.
+- **Top-K** — keep only the K highest-probability tokens.
+- **Top-P (nucleus)** — keep the smallest set of tokens whose cumulative probability exceeds `p`.
 
-Divides logits by temperature before softmax:
-- `temperature < 1.0` → sharper distribution, more predictable text
-- `temperature > 1.0` → flatter distribution, more creative/random text
-- `temperature = 1.0` → unmodified model distribution
+Generation stops early when the model emits `<|endoftext|>`.
 
-### Top-K Sampling
+---
 
-Keeps only the K highest probability tokens, zeros the rest. Prevents sampling from the long tail of unlikely tokens.
+## KV-Cache
 
-### Top-P (Nucleus) Sampling
+Autoregressive generation uses a **KV-cache** so each new token reuses the Keys/Values computed for all previous tokens instead of recomputing the whole sequence.
 
-Keeps the smallest set of tokens whose cumulative probability exceeds p. More dynamic than top-k — uses more tokens when the distribution is flat, fewer when it's peaked.
+Flow:
+1. **Prefill**: the prompt is processed once; each layer returns its K/V (rotated by RoPE at absolute positions).
+2. **Decode**: each new token is processed alone; its Q/K is rotated at `offset = current_cache_length`, concatenated onto the cached K/V, and attends over the full history.
+3. Caches are passed in and **returned** from each `call` (not mutated in place), so they persist correctly across steps.
 
-**Default generation settings:**
-```python
-temperature = 0.8
-top_p       = 0.9
-top_k       = None
-```
+This makes generation O(n) per step instead of O(n²), and cached vs full-recompute outputs match exactly.
 
 ---
 
@@ -284,83 +247,118 @@ FastAPI server exposing the model as a REST API.
 
 | Method | Route | Description |
 |--------|-------|-------------|
-| `GET` | `/` | Serves frontend UI |
-| `GET` | `/health` | Model status, param count, vocab size |
-| `POST` | `/generate` | Generate text from prompt |
-| `GET` | `/history` | Retrieve past generations from DB |
+| `GET` | `/` | Serves the frontend UI |
+| `GET` | `/health` | Model status, parameter count, vocab size |
+| `GET` | `/creativity-levels` | The named creativity presets with explanations |
+| `POST` | `/generate` | Generate a story from a prompt |
+| `GET` | `/history` | Retrieve past generations |
+| `DELETE` | `/history/{id}` | Delete a stored generation |
 
 ### Generate Request
 
 ```json
 {
-  "prompt": "Once upon a time",
-  "max_new_tokens": 100,
-  "temperature": 0.8,
-  "top_p": 0.9
+  "prompt": "Once upon a time there was a little dragon",
+  "creativity": "balanced",
+  "max_new_tokens": 200
 }
 ```
+
+`creativity` is one of `predictable | balanced | creative | wild` (see below). Advanced callers may instead pass raw `temperature` and `top_p`, which override the preset.
 
 ### Generate Response
 
 ```json
 {
-  "prompt": "Once upon a time",
-  "generated_text": "Once upon a time there was...",
+  "prompt": "Once upon a time there was a little dragon",
+  "generated_text": "Once upon a time there was a little dragon ...",
+  "creativity": "balanced",
+  "creativity_description": "A good mix of sense and surprise ...",
   "temperature": 0.8,
   "top_p": 0.9,
-  "max_new_tokens": 100,
-  "response_time_ms": 2341.5
+  "max_new_tokens": 200,
+  "response_time_ms": 812.4
 }
 ```
 
 ---
 
+## Creativity Levels
+
+Rather than asking users to guess what "temperature" means, the API exposes named levels, each with a plain-language description of how it changes the story. Fetch them from `/creativity-levels`:
+
+| Level | temperature | top_p | What it does to your stories |
+|-------|-------------|-------|------------------------------|
+| **Predictable** | 0.6 | 0.85 | Safe and focused. Simple, calm, easy-to-follow tales. |
+| **Balanced** *(default)* | 0.8 | 0.9 | A good mix of sense and surprise. Recommended for most prompts. |
+| **Creative** | 1.0 | 0.95 | More imaginative and varied, with the odd unexpected twist. |
+| **Wild** | 1.3 | 1.0 | Unpredictable and quirky. Fun, but may wander or stop making sense. |
+
+In short: **lower = safer and more repetitive, higher = more creative and more random.**
+
+---
+
 ## Database
 
-PostgreSQL database (`lil_gpt`) stores every generation for monitoring and future fine-tuning data collection.
+PostgreSQL stores every generation for monitoring and future data collection.
 
-### Schema — `generations` table
+### Schema — `generations`
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | Integer (PK) | Auto-increment |
-| `prompt` | String | Input prompt |
-| `generated_text` | String | Model output |
-| `temperature` | Float | Sampling temperature |
-| `top_p` | Float | Nucleus sampling threshold |
+| `prompt` | Text | Input prompt |
+| `generated_text` | Text | Model output |
+| `temperature` | Float | Effective sampling temperature |
+| `top_p` | Float | Effective nucleus threshold |
 | `max_new_tokens` | Integer | Generation length |
-| `response_time_ms` | Float | Latency in milliseconds |
-| `created_at` | DateTime | Auto-set by PostgreSQL |
+| `response_time_ms` | Float | Latency in ms |
+| `created_at` | DateTime (indexed) | Set by PostgreSQL |
 
-### Stack
-
-```
-FastAPI → SQLAlchemy ORM → psycopg2 driver → PostgreSQL 14
-```
-
-Tables are created automatically on server startup via `Base.metadata.create_all()`.
+Stack: `FastAPI → SQLAlchemy ORM → psycopg2 → PostgreSQL`. Tables are created on startup.
 
 ---
 
 ## Project Structure
 
 ```
-transformers-build/
-├── model.py              # GPT model, training loop, sampling functions
-├── layers.py             # TransformerBlock, MultiheadAttention, RoPE
-├── tokenizer.py          # BPE tokenizer implementation
-├── server.py             # FastAPI inference server
-├── generation.py         # Standalone generation script
-├── database.py           # SQLAlchemy connection and session
-├── models_db.py          # Database table definitions
-├── crud.py               # Database read/write operations
+TinyGPT/
+├── transformer_model/
+│   ├── model.py          # GPT model, training loop, sampling, generation, data pipeline
+│   ├── layers.py         # Attention, RoPE, TransformerBlock, KV-cache
+│   ├── tokenizer.py      # HFTokenizer (used) + BPE_tokenizer / CharTokenizer (reference)
+│   └── generation.py     # Standalone generation script
+├── app/
+│   ├── server.py         # FastAPI inference server
+│   ├── crud.py           # DB read/write
+│   ├── database.py       # SQLAlchemy engine/session
+│   └── models_db.py      # generations table
+├── saved_models/
+│   ├── tinystories_tokenizer.json
+│   ├── tinystories_model.weights.h5
+│   └── ckpt_tinystories/        # resumable training checkpoints
 ├── index.html            # Frontend UI
-├── tokenizer.pkl         # Saved tokenizer state
-├── best_model.weights.h5 # Saved model weights
-├── X.npy                 # Cached training sequences (input)
-├── Y.npy                 # Cached training sequences (target)
-└── loss_curve.png        # Training loss visualization
+├── requirements.txt          # full deps (training + serving, GPU)
+├── requirements-serve.txt    # slim serving-only deps (CPU)
+├── Dockerfile
+├── .dockerignore
+└── docker-compose.yml
 ```
+
+---
+
+## Docker
+
+The container serves the model on CPU (no GPU needed for inference).
+
+```bash
+# build + run app and PostgreSQL together
+POSTGRES_PASSWORD=yourpassword docker compose up --build
+```
+
+- App: `http://localhost:8000/`
+- The image installs only `requirements-serve.txt` (CPU TensorFlow, no CUDA/training packages) and copies only the TinyStories tokenizer + weights — training checkpoints are excluded via `.dockerignore`.
+- DB credentials come from env vars: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` (defaults: `avi` / `changeme` / `tiny_gpt`).
 
 ---
 
@@ -369,112 +367,68 @@ transformers-build/
 ### Prerequisites
 
 - Python 3.10
-- CUDA-compatible GPU (tested on NVIDIA RTX 3050 6GB)
+- (Optional) CUDA-capable GPU. Tested on an RTX 3050 6GB under WSL2.
 - PostgreSQL 14
 
-### Install Python Dependencies
+### Install
 
 ```bash
-python -m venv tfenv
-source tfenv/bin/activate
-pip install tensorflow==2.15.0
-pip install fastapi uvicorn
-pip install sqlalchemy psycopg2-binary
-pip install datasets matplotlib numpy
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-### Install and Start PostgreSQL
+For GPU training/inference, `requirements.txt` pins `tensorflow[and-cuda]==2.21.0`, which bundles the matching CUDA/cuDNN wheels.
+
+### PostgreSQL
 
 ```bash
 sudo apt install postgresql postgresql-contrib
 sudo service postgresql start
-
-sudo -u postgres psql
-CREATE DATABASE lil_gpt;
-GRANT ALL PRIVILEGES ON DATABASE lil_gpt TO your_user;
-\q
+sudo -u postgres psql -c "CREATE DATABASE tiny_gpt;"
 ```
 
-### Configure Database Connection
-
-Update `database.py`:
-```python
-DATABASE_URL = "postgresql://your_user:your_password@localhost:5432/lil_gpt"
-```
-
-### Run the Server
+Set the connection string via env var:
 
 ```bash
-source tfenv/bin/activate
-uvicorn server:app --reload --port 8000
+export DATABASE_URL="postgresql://user:password@localhost:5432/tiny_gpt"
 ```
-
-Visit `http://localhost:8000/docs` for the interactive API UI.
 
 ---
 
-## Training Guidelines
+## Running the Server
 
-### From Scratch
-
-```python
-# in model.py, uncomment these lines:
-tokenizer.train(text)
-tokenizer.build_token_mappings(text)
-tokenizer.save("tokenizer.pkl")
-```
-
-Then run:
 ```bash
-python model.py
+source .venv/bin/activate
+uvicorn app.server:app --port 8000
 ```
 
-### Recommended Configuration by Hardware
+- UI: `http://localhost:8000/`
+- Interactive API docs: `http://localhost:8000/docs`
 
-| VRAM | batch_size | seq_len | num_layers | dff |
-|------|-----------|---------|------------|-----|
-| 4GB  | 16 | 128 | 6 | 1024 |
-| 6GB  | 16 | 256 | 8 | 2048 |
-| 8GB  | 32 | 256 | 8 | 2048 |
-| 16GB | 64 | 512 | 12 | 3072 |
+To force CPU inference: `export CUDA_VISIBLE_DEVICES=-1` before launching.
 
-### Dataset Size vs Merges
+---
 
-| Stories | Recommended Merges |
-|---------|--------------------|
-| 10k | 1000 |
-| 20k | 2000 |
-| 50k | 3000 |
-| 100k | 5000–6000 |
+## Training From Scratch
 
-### Loss Targets
+```bash
+cd transformer_model
+python3 model.py
+```
 
-| Loss | Generation Quality |
-|------|--------------------|
-| > 3.0 | Random-looking output |
-| 2.5–3.0 | Words and phrases but incoherent |
-| 2.2–2.5 | Readable sentences, poor story coherence |
-| 2.0–2.2 | Coherent paragraphs, some character drift |
-| < 2.0 | Coherent stories with consistent characters |
+On the first run it trains and saves the tokenizer, then begins streaming TinyStoriesV2 and training. Progress prints per 50 updates, with validation every 1000. Best weights and resumable checkpoints are written to `saved_models/`. Re-running resumes from the last checkpoint.
 
-### Tips
-
-- Save `X.npy` and `Y.npy` after first encoding to avoid re-encoding on every run
-- Use `patience=3, min_delta=0.01` in the callback — stops training automatically
-- Monitor batch-level loss — spikes are normal, consistent upward trend is not
-- Pre-LayerNorm is more stable than Post-LayerNorm for deep networks
-- RoPE outperforms learned positional embeddings at longer sequence lengths
+Keep the process alive for long runs (`tmux`/`nohup`) and ensure the machine does not sleep.
 
 ---
 
 ## Results
 
-### Training History
+Trained on TinyStoriesV2 with the ~50M configuration, validation cross-entropy descends into the ~1.4 range and below, producing coherent short stories with consistent characters and a beginning/middle/end. Example (balanced creativity):
 
-| Run | Stories | Merges | seq_len | Layers | Final Loss |
-|-----|---------|--------|---------|--------|------------|
-| 1 | 5k | 500 | 64 | 6 | 2.97 |
-| 2 | 20k | 4000 | 64 | 6 | 3.46 |
-| 3 | 20k | 2000 | 64 | 6 | 2.74 |
-| 4 | 50k | 3000 | 128 | 6 | 2.42 |
-| 5 | 100k | 6000 | 256 | 8 | **2.32** |
+> **Prompt:** "once upon a time there was a donkey named avi"
+>
+> ...She was three years old and loved to explore the world around her. One day she found a dull, old box in the garage. She was curious and wanted to open it... a voice said, "Don't worry, I can help you." It was her brother, Sam... Inside was a big, shiny ball... The moral of this story is that sometimes it's important to be curious.
+
+Generation quality continues to improve as validation loss decreases over training.

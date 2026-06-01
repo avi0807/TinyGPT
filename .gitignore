@@ -3,6 +3,26 @@ __pycache__/
 .env
 venv/
 tfenv/
+.venv/
+.vscode/
 *.png
 *.npy
+*.log
 tiny_shakespeare.txt
+
+# local DB
+tinygpt.db
+*.sqlite
+*.sqlite3
+
+# training artifacts (not needed for serving / deploy)
+saved_models/ckpt/
+saved_models/ckpt_tinystories/
+
+# old / unused model artifacts (superseded by tinystories_*)
+saved_models/hf_tokenizer.json
+saved_models/best_model.weights.h5
+saved_models/tokenizer.pkl
+
+# dev-only scripts
+smoke_test.py
