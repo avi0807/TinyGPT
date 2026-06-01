@@ -1,13 +1,3 @@
----
-title: TinyGPT
-emoji: 📖
-colorFrom: red
-colorTo: pink
-sdk: docker
-app_port: 7860
-pinned: false
----
-
 # TinyGPT
 
 A small GPT-style language model built and trained from scratch to write short children's stories. Implemented in TensorFlow/Keras with a custom transformer (RoPE attention, weight tying, KV-cache), a byte-level BPE tokenizer, and a FastAPI inference server.
