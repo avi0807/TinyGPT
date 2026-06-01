@@ -14,10 +14,9 @@ A small GPT-style language model built and trained from scratch to write short c
 
 **🔗 Live demo:** [avi080704-tinygpt.hf.space](https://avi080704-tinygpt.hf.space)
 
-<!-- Add a screenshot of the app below -->
-<!-- ![TinyGPT UI](docs/screenshot.png) -->
+<img width="1902" height="965" alt="image" src="https://github.com/user-attachments/assets/0e1e2f4f-3892-48a0-87b3-473abccf4e4e" />
+
 <p align="center">
-  <em>(screenshot coming soon)</em>
 </p>
 
 ---
